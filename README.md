@@ -20,7 +20,6 @@ dart run build_runner build
 flutter run
 ```
 
-The `.env` file is **gitignored**. Only `.env.example` is committed — your real key stays on your machine.
 
 Alternative for CI/release builds:
 
