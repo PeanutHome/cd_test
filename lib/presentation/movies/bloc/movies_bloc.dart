@@ -1,35 +1,53 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../../core/network/network_failure.dart';
-import '../../../domain/services/network_info.dart';
-import '../../../domain/usecases/get_popular_movies.dart';
+import '../../../domain/entities/popular_movies_sync.dart';
+import '../../../domain/usecases/load_popular_movies.dart';
 import 'movies_event.dart';
 import 'movies_state.dart';
 
 class MoviesBloc extends Bloc<MoviesEvent, MoviesState> {
-  MoviesBloc(this._getPopularMovies, this._networkInfo)
-      : super(const MoviesInitial()) {
+  MoviesBloc(this._loadPopularMovies) : super(const MoviesInitial()) {
     on<MoviesStarted>(_onStarted);
     on<MoviesRefreshed>(_onRefreshed);
     on<MoviesLoadMore>(_onLoadMore);
     on<MoviesViewModeChanged>(_onViewModeChanged);
   }
 
-  final GetPopularMoviesUseCase _getPopularMovies;
-  final NetworkInfo _networkInfo;
+  final LoadPopularMovies _loadPopularMovies;
 
   Future<void> _onStarted(
     MoviesStarted event,
     Emitter<MoviesState> emit,
   ) async {
-    await _load(emit, page: 1, replaceCache: false, showLoadingWhenEmpty: true);
+    final cached = await _loadPopularMovies.readCache();
+    final viewMode = _viewModeFrom(state);
+
+    if (cached.isNotEmpty) {
+      emit(
+        MoviesSuccess(
+          movies: cached,
+          viewMode: viewMode,
+          currentPage: _loadPopularMovies.cachedPage,
+          totalPages: _loadPopularMovies.totalPages,
+        ),
+      );
+    } else {
+      emit(const MoviesLoading());
+    }
+
+    final sync = await _loadPopularMovies.syncFirstPage(replaceCache: false);
+    _emitSync(emit, sync, viewMode);
   }
 
   Future<void> _onRefreshed(
     MoviesRefreshed event,
     Emitter<MoviesState> emit,
   ) async {
-    await _load(emit, page: 1, replaceCache: true, showLoadingWhenEmpty: false);
+    final viewMode = _viewModeFrom(state);
+    emit(const MoviesLoading());
+
+    final sync = await _loadPopularMovies.forceRefresh();
+    _emitSync(emit, sync, viewMode);
   }
 
   Future<void> _onLoadMore(
@@ -44,33 +62,26 @@ class MoviesBloc extends Bloc<MoviesEvent, MoviesState> {
       return;
     }
 
-    if (!await _networkInfo.isConnected) {
-      emit(current.copyWith(isOffline: true));
+    emit(current.copyWith(isLoadingMore: true));
+
+    final sync = await _loadPopularMovies.syncNextPage(
+      nextPage: current.currentPage + 1,
+    );
+
+    if (sync.failed) {
+      emit(current.copyWith(isLoadingMore: false, isOffline: sync.isOffline));
       return;
     }
 
-    emit(current.copyWith(isLoadingMore: true));
-
-    try {
-      final nextPage = current.currentPage + 1;
-      final result = await _getPopularMovies.fetch(page: nextPage);
-      emit(
-        current.copyWith(
-          movies: [...current.movies, ...result.movies],
-          currentPage: result.page,
-          totalPages: result.totalPages,
-          isLoadingMore: false,
-          isOffline: false,
-        ),
-      );
-    } catch (error) {
-      emit(
-        current.copyWith(
-          isLoadingMore: false,
-          isOffline: NetworkFailure.from(error).isOffline,
-        ),
-      );
-    }
+    emit(
+      current.copyWith(
+        movies: sync.movies,
+        currentPage: sync.page,
+        totalPages: sync.totalPages,
+        isLoadingMore: false,
+        isOffline: sync.isOffline,
+      ),
+    );
   }
 
   void _onViewModeChanged(
@@ -83,92 +94,28 @@ class MoviesBloc extends Bloc<MoviesEvent, MoviesState> {
     }
   }
 
-  Future<void> _load(
-    Emitter<MoviesState> emit, {
-    required int page,
-    required bool replaceCache,
-    required bool showLoadingWhenEmpty,
-  }) async {
-    final cached = await _getPopularMovies.getCached();
-    final viewMode = state is MoviesSuccess
-        ? (state as MoviesSuccess).viewMode
-        : MoviesViewMode.list;
+  MoviesViewMode _viewModeFrom(MoviesState state) {
+    return state is MoviesSuccess ? state.viewMode : MoviesViewMode.list;
+  }
 
-    if (cached.isNotEmpty) {
-      emit(
-        MoviesSuccess(
-          movies: cached,
-          viewMode: viewMode,
-          currentPage: _getPopularMovies.cachedPage,
-          totalPages: _getPopularMovies.totalPages,
-        ),
-      );
-    } else if (showLoadingWhenEmpty) {
-      emit(const MoviesLoading());
-    }
-
-    if (!await _networkInfo.isConnected) {
-      if (cached.isNotEmpty) {
-        emit(
-          MoviesSuccess(
-            movies: cached,
-            viewMode: viewMode,
-            currentPage: _getPopularMovies.cachedPage,
-            totalPages: _getPopularMovies.totalPages,
-            isOffline: true,
-          ),
-        );
-      } else {
-        emit(
-          const MoviesError(
-            message:
-                'You are offline and no saved movies were found. Connect to the internet and pull to refresh.',
-            isOffline: true,
-          ),
-        );
-      }
+  void _emitSync(
+    Emitter<MoviesState> emit,
+    PopularMoviesSync sync,
+    MoviesViewMode viewMode,
+  ) {
+    if (sync.failed) {
+      emit(MoviesError(message: sync.errorMessage!, isOffline: sync.isOffline));
       return;
     }
 
-    try {
-      final result = await _getPopularMovies.fetch(
-        page: page,
-        replaceCache: replaceCache,
-      );
-      final movies = replaceCache || cached.isEmpty
-          ? result.movies
-          : await _getPopularMovies.getCached();
-      emit(
-        MoviesSuccess(
-          movies: movies,
-          viewMode: viewMode,
-          currentPage: replaceCache || cached.isEmpty
-              ? result.page
-              : _getPopularMovies.cachedPage,
-          totalPages: result.totalPages,
-          isOffline: false,
-        ),
-      );
-    } catch (error) {
-      final failure = NetworkFailure.from(error);
-      if (cached.isNotEmpty) {
-        emit(
-          MoviesSuccess(
-            movies: cached,
-            viewMode: viewMode,
-            currentPage: _getPopularMovies.cachedPage,
-            totalPages: _getPopularMovies.totalPages,
-            isOffline: failure.isOffline,
-          ),
-        );
-      } else {
-        emit(
-          MoviesError(
-            message: failure.message,
-            isOffline: failure.isOffline,
-          ),
-        );
-      }
-    }
+    emit(
+      MoviesSuccess(
+        movies: sync.movies,
+        viewMode: viewMode,
+        currentPage: sync.page,
+        totalPages: sync.totalPages,
+        isOffline: sync.isOffline,
+      ),
+    );
   }
 }

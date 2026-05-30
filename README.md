@@ -1,34 +1,26 @@
 # Movie Explorer
 
-Offline-first Flutter app that loads popular movies from [TMDB](https://www.themoviedb.org/).
+Offline-first Flutter app for the TMDB coding assessment.
 
 ## Setup
 
-1. Get a free **TMDB v3 API key** from [TMDB settings](https://www.themoviedb.org/settings/api).
-2. Copy the env template and add your key:
-
 ```bash
 cp .env.example .env
-# Edit .env and set TMDB_API_KEY=your_key_here
-```
+# set TMDB_API_KEY in .env
 
-3. Install and generate code:
-
-```bash
 flutter pub get
 dart run build_runner build
 flutter run
 ```
 
-
-Alternative for CI/release builds:
-
-```bash
-flutter run --dart-define=TMDB_API_KEY=your_key_here
-```
-
 ## Architecture
 
-- **Domain**: entities, repository contracts, use cases (pure Dart)
-- **Data**: Retrofit API, Hive cache, repository implementation
-- **Presentation**: BLoC + Material UI (list/grid toggle, pagination, pull-to-refresh)
+- **Domain** — entities, `MoviesRepository` contract, `LoadPopularMovies` use case (cache/network policy)
+- **Data** — Retrofit API, typed Hive cache (`CachedPopularMovies`), `MoviesRepositoryImpl`
+- **Presentation** — BLoC + list/detail screens
+
+## Tests
+
+```bash
+flutter test
+```

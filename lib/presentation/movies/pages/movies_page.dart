@@ -3,7 +3,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../domain/entities/movie.dart';
-import '../../../domain/usecases/get_movie_detail.dart';
 import '../bloc/movies_bloc.dart';
 import '../bloc/movies_event.dart';
 import '../bloc/movies_state.dart';
@@ -12,9 +11,7 @@ import '../widgets/offline_banner.dart';
 import 'movie_detail_page.dart';
 
 class MoviesPage extends StatefulWidget {
-  const MoviesPage({super.key, required this.getMovieDetail});
-
-  final GetMovieDetailUseCase getMovieDetail;
+  const MoviesPage({super.key});
 
   @override
   State<MoviesPage> createState() => _MoviesPageState();
@@ -48,12 +45,7 @@ class _MoviesPageState extends State<MoviesPage> {
 
   void _openDetail(Movie movie) {
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => MovieDetailPage(
-          movie: movie,
-          getMovieDetail: widget.getMovieDetail,
-        ),
-      ),
+      MaterialPageRoute(builder: (_) => MovieDetailPage(movie: movie)),
     );
   }
 

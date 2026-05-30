@@ -2,26 +2,29 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/widgets.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import '../config/app_config.dart';
-import '../di/app_dependencies.dart';
-import '../network/api_key_interceptor.dart';
+
 import '../../data/api/tmdb_api.dart';
-import '../../data/datasources/movie_local_datasource.dart';
-import '../../data/datasources/movie_remote_datasource.dart';
-import '../../data/repositories/movie_repository_impl.dart';
-import '../../data/services/network_info_impl.dart';
-import '../../domain/usecases/get_movie_detail.dart';
-import '../../domain/usecases/get_popular_movies.dart';
+import '../../data/local/cached_popular_movies.dart';
+import '../../data/local/movies_cache_store.dart';
+import '../../data/repositories/movies_repository_impl.dart';
+import '../../data/services/connectivity_plugin.dart';
+import '../../domain/usecases/load_popular_movies.dart';
+import '../config/app_config.dart';
+import '../di/app_container.dart';
+import '../network/api_key_interceptor.dart';
 
 class AppBootstrap {
-  static Future<AppDependencies?> initialize() async {
+  static Future<AppContainer?> initialize() async {
     WidgetsFlutterBinding.ensureInitialized();
     await AppConfig.load();
 
     if (!AppConfig.isConfigured) return null;
 
     await Hive.initFlutter();
-    final moviesBox = await Hive.openBox('movies');
+    Hive.registerAdapter(CachedPopularMoviesAdapter());
+
+    final cacheBox = await Hive.openBox<CachedPopularMovies>('movies_cache');
+    final cacheStore = MoviesCacheStore(cacheBox);
 
     final dio = Dio(
       BaseOptions(
@@ -31,15 +34,12 @@ class AppBootstrap {
       ),
     )..interceptors.add(ApiKeyInterceptor());
 
-    final repository = MovieRepositoryImpl(
-      MovieRemoteDataSource(TmdbApi(dio)),
-      MovieLocalDataSource(moviesBox),
-    );
+    final moviesRepo = MoviesRepositoryImpl(TmdbApi(dio), cacheStore);
+    final connectivity = ConnectivityPlugin(Connectivity());
 
-    return AppDependencies(
-      getPopularMovies: GetPopularMoviesUseCase(repository),
-      getMovieDetail: GetMovieDetailUseCase(repository),
-      networkInfo: NetworkInfoImpl(Connectivity()),
+    return AppContainer(
+      loadPopularMovies: LoadPopularMovies(moviesRepo, connectivity),
+      connectivity: connectivity,
     );
   }
 }

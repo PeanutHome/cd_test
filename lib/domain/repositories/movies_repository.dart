@@ -1,9 +1,8 @@
 import '../entities/movie.dart';
-import '../entities/movie_detail.dart';
 import '../entities/popular_movies_result.dart';
 
-abstract class MovieRepository {
-  Future<List<Movie>> getCachedPopularMovies();
+abstract class MoviesRepository {
+  Future<List<Movie>> readCache();
 
   int get cachedPage;
 
@@ -11,10 +10,8 @@ abstract class MovieRepository {
 
   Future<void> clearCache();
 
-  Future<PopularMoviesResult> fetchPopularMovies({
+  Future<PopularMoviesResult> fetchPage({
     required int page,
     bool replaceCache = false,
   });
-
-  Future<MovieDetail> getMovieDetail(int id);
 }
